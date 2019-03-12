@@ -1,8 +1,6 @@
-package com.effective.android.river.debug;
+package com.effective.android.river;
 
 import android.util.Log;
-
-import com.effective.android.river.Config;
 
 /**
  * created by yummylau on 2019/03/11

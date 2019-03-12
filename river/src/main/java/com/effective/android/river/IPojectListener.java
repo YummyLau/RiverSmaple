@@ -1,8 +1,7 @@
-package com.effective.android.river.interfaces;
+package com.effective.android.river;
 
-import com.effective.android.river.Project;
 
-public interface PojectListener{
+public interface IPojectListener {
 
     void onStart(Project task);
 

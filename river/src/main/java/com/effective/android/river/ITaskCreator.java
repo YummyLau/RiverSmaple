@@ -1,4 +1,4 @@
-package com.effective.android.river.interfaces;
+package com.effective.android.river;
 
 import android.support.annotation.Nullable;
 

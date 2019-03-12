@@ -1,7 +1,5 @@
 package com.effective.android.river;
 
-import com.effective.android.river.interfaces.ITaskCreator;
-
 import java.util.HashMap;
 import java.util.Map;
 

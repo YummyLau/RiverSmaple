@@ -1,9 +1,8 @@
 package com.effective.android.riversample;
 
 import android.app.Application;
-import android.util.Log;
 
-import com.effective.android.river.debug.Logger;
+import com.effective.android.river.Logger;
 
 public class MainApplication extends Application {
 

@@ -15,10 +15,34 @@ public class Project extends Task {
         super(name, async);
     }
 
+    @Override
+    public void behind(Task task) {
+        mFinishTask.behind(task);
+    }
+
+    @Override
+    public void dependOn(Task task) {
+        mStartTask.dependOn(task);
+    }
+
+    @Override
+    public void removeBehind(Task task) {
+        mFinishTask.removeBehind(task);
+    }
+
+    @Override
+    public void removeDependence(Task task) {
+        mStartTask.removeDependence(task);
+    }
+
+    @Override
+    public synchronized void start() {
+        mStartTask.start();
+    }
 
     @Override
     public void run(String name) {
-        mStartTask.start();
+        //不需要处理
     }
 
     public static class Builder {

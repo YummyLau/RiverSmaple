@@ -6,7 +6,7 @@ import android.text.TextUtils;
 import com.effective.android.river.Project;
 import com.effective.android.river.Task;
 import com.effective.android.river.TaskFactory;
-import com.effective.android.river.interfaces.ITaskCreator;
+import com.effective.android.river.ITaskCreator;
 
 import java.util.Random;
 
@@ -15,6 +15,8 @@ public class TaskTest {
     public static final String TASK_A = "task_A";
     public static final String TASK_B = "task_B";
     public static final String TASK_C = "task_C";
+    public static final String TASK_D = "task_D";
+    public static final String TASK_E = "task_E";
 
     public void start() {
         final TaskFactory factory = new TaskFactory(new ITaskCreator() {
@@ -32,24 +34,38 @@ public class TaskTest {
                         case TASK_C: {
                             return new TaskC();
                         }
+                        case TASK_D: {
+                            return new TaskD();
+                        }
+                        case TASK_E: {
+                            return new TaskE();
+                        }
                     }
                 }
                 return null;
             }
         });
+        TaskD taskD = new TaskD();
 
         Project.Builder builder = new Project.Builder("project1", factory);
         builder.add(TASK_A);
         builder.add(TASK_B).dependOn(TASK_A);
         builder.add(TASK_C).dependOn(TASK_A);
         Project project = builder.build();
-        project.start();
+        project.dependOn(taskD);
+
+
+
+        TaskE taskE = new TaskE();
+        taskE.dependOn(project);
+
+        taskD.start();
     }
 
     public static class TaskA extends Task {
 
         public TaskA() {
-            super(TASK_A);
+            super(TASK_A, true);
         }
 
         @Override
@@ -65,7 +81,7 @@ public class TaskTest {
     public static class TaskB extends Task {
 
         public TaskB() {
-            super(TASK_B, true);
+            super(TASK_B);
         }
 
         @Override
@@ -82,6 +98,38 @@ public class TaskTest {
 
         public TaskC() {
             super(TASK_C, true);
+        }
+
+        @Override
+        public void run(String name) {
+            try {
+                doJob(400);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static class TaskD extends Task {
+
+        public TaskD() {
+            super(TASK_D);
+        }
+
+        @Override
+        public void run(String name) {
+            try {
+                doJob(400);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static class TaskE extends Task {
+
+        public TaskE() {
+            super(TASK_E, true);
         }
 
         @Override
