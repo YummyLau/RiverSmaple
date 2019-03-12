@@ -4,6 +4,7 @@ import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
 import com.effective.android.river.Project;
+import com.effective.android.river.RiverManager;
 import com.effective.android.river.Task;
 import com.effective.android.river.TaskFactory;
 import com.effective.android.river.ITaskCreator;
@@ -17,6 +18,7 @@ public class TaskTest {
     public static final String TASK_C = "task_C";
     public static final String TASK_D = "task_D";
     public static final String TASK_E = "task_E";
+    public static final String TASK_F = "task_F";
 
     public void start() {
         final TaskFactory factory = new TaskFactory(new ITaskCreator() {
@@ -40,11 +42,16 @@ public class TaskTest {
                         case TASK_E: {
                             return new TaskE();
                         }
+                        case TASK_F: {
+                            return new TaskF();
+                        }
                     }
                 }
                 return null;
             }
         });
+
+
         TaskD taskD = new TaskD();
 
         Project.Builder builder = new Project.Builder("project1", factory);
@@ -54,12 +61,13 @@ public class TaskTest {
         Project project = builder.build();
         project.dependOn(taskD);
 
-
-
         TaskE taskE = new TaskE();
         taskE.dependOn(project);
 
-        taskD.start();
+        TaskF taskF = new TaskF();
+        taskF.dependOn(taskE);
+
+        RiverManager.getInstance().start(taskD,taskE);
     }
 
     public static class TaskA extends Task {
@@ -130,6 +138,22 @@ public class TaskTest {
 
         public TaskE() {
             super(TASK_E, true);
+        }
+
+        @Override
+        public void run(String name) {
+            try {
+                doJob(400);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static class TaskF extends Task {
+
+        public TaskF() {
+            super(TASK_F);
         }
 
         @Override

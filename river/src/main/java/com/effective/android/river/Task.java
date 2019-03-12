@@ -5,6 +5,8 @@ import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.util.SparseArray;
 
+import com.effective.android.river.anno.TaskState;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -19,22 +21,21 @@ import java.util.concurrent.ExecutorService;
 public abstract class Task implements Runnable {
 
     @TaskState
-    public int state = TaskState.IDLE;
-    public String name;
-    public boolean async;
+    protected int state = TaskState.IDLE;
+    protected String name;
+    protected boolean async;
 
     private List<Task> behindTasks = new ArrayList<>();                                //被依赖者
     private Set<Task> dependTasks = new HashSet<>();                                   //依赖者
     private Set<String> dependTaskName = new HashSet<>();                              //用于log统计
-    public volatile boolean waitTasks = false;
 
-    public static final int DEFAULT_EXECUTE_PRIORITY = 0;
+    protected static final int DEFAULT_EXECUTE_PRIORITY = 0;
     private int mExecutePriority = DEFAULT_EXECUTE_PRIORITY;
     private List<ITaskListener> taskListeners = new ArrayList<>();
 
     private static Handler sHandler = new Handler(Looper.getMainLooper());
 
-    public int getExecutePriority() {
+    protected int getExecutePriority() {
         return mExecutePriority;
     }
 
@@ -56,22 +57,14 @@ public abstract class Task implements Runnable {
         }
     }
 
+
     @NonNull
     public List<ITaskListener> getTaskListeners() {
         return taskListeners;
     }
 
-    public synchronized void startWithDowmGraph() {
 
-        StringBuilder stringBuilder = new StringBuilder("Graph start : ");
-
-        stringBuilder.append(this.name);
-        for (Task task : behindTasks) {
-
-        }
-        stringBuilder.append("Graph end  !");
-
-
+    protected synchronized void start() {
         if (!TaskHelper.isTaskIdle(this)) {
             throw new RuntimeException("You try to run task " + name + " twice, is there a circular dependency?");
         }
@@ -79,28 +72,11 @@ public abstract class Task implements Runnable {
         if (async) {
             sExecutorService.execute(this);
         } else {
-            sHandler.post(this);
-        }
-    }
-
-//    public String getBehindInfo(int height) {
-//        if (behindTasks.isEmpty()) {
-//            return name;
-//        }
-//        for (Task task : behindTasks) {
-//
-//        }
-//    }
-
-    public synchronized void start() {
-        if (!TaskHelper.isTaskIdle(this)) {
-            throw new RuntimeException("You try to run task " + name + " twice, is there a circular dependency?");
-        }
-        TaskHelper.toStart(this);
-        if (async) {
-            sExecutorService.execute(this);
-        } else {
-            sHandler.post(this);
+            if(RiverManager.sInstance.waitTasks.isEmpty()){
+                sHandler.post(this);
+            }else{
+                RiverManager.sInstance.toRunTask.add(this);
+            }
         }
     }
 
@@ -109,59 +85,72 @@ public abstract class Task implements Runnable {
         TaskHelper.toRunning(this, Thread.currentThread().getName());
         run(name);
         TaskHelper.toFinish(this);
+        RiverManager.sInstance.waitTasks.remove(this);
         notifyNextTask();
-        waitUnitTaskFinish();
-    }
-
-    private void waitUnitTaskFinish() {
-        TaskHelper.toBlock(this);
-        while (waitTasks) {
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
         recycle();
     }
 
-    public abstract void run(String name);
+    protected abstract void run(String name);
 
     public Set<String> getDependTaskName() {
         return dependTaskName;
     }
 
-    public void wait(Task task) {
-        TaskHelper.addWaitTask(this, task.name);
-    }
 
-    public void behind(Task task) {
+    /**
+     * 后置触发, 和 {@link Task#dependOn(Task)} 方向相反，都可以设置依赖关系
+     *
+     * @param task
+     */
+    protected void behind(Task task) {
         if (task != null && task != this) {
-            task.dependTasks.add(this);
-            task.dependTaskName.add(this.name);
+            if (task instanceof Project) {
+                task = ((Project) task).getStartTask();
+            }
             behindTasks.add(task);
+            task.dependOn(this);
         }
     }
 
-    public void removeBehind(Task task) {
+    protected void removeBehind(Task task) {
         if (task != null && task != this) {
+            if (task instanceof Project) {
+                task = ((Project) task).getStartTask();
+            }
             behindTasks.remove(task);
-            task.dependTasks.remove(this);
+            task.removeDependence(this);
         }
     }
 
+    /**
+     * 前置条件, 和 {@link Task#behind(Task)} 方向相反，都可以设置依赖关系
+     *
+     * @param task
+     */
     public void dependOn(Task task) {
         if (task != null && task != this) {
+            if (task instanceof Project) {
+                task = ((Project) task).getEndTask();
+            }
             dependTasks.add(task);
             dependTaskName.add(task.name);
-            task.behindTasks.add(this);
+            //防止外部所有直接调用dependOn无法构建完整图
+            if (!task.behindTasks.contains(this)) {
+                task.behindTasks.add(this);
+            }
         }
     }
 
-    public void removeDependence(Task task) {
+    protected void removeDependence(Task task) {
         if (task != null && task != this) {
+            if (task instanceof Project) {
+                task = ((Project) task).getEndTask();
+            }
             dependTasks.remove(task);
-            task.behindTasks.remove(this);
+            dependTaskName.add(task.name);
+            if (task.behindTasks.contains(this)) {
+                task.behindTasks.remove(this);
+            }
         }
     }
 
@@ -198,7 +187,6 @@ public abstract class Task implements Runnable {
     }
 
     void recycle() {
-        TaskHelper.toRecycle(this);
         dependTasks.clear();
         behindTasks.clear();
         taskListeners.clear();
@@ -220,18 +208,9 @@ public abstract class Task implements Runnable {
         @Override
         public void onFinish(Task task) {
             Logger.d(task.name + " -- onFinish -- ");
+            Logger.d("详情信息" + getTaskRuntimeInfoString(task));
         }
 
-        @Override
-        public void onBlock(Task task) {
-            Logger.d(task.name + " -- onBlock -- ");
-        }
-
-        @Override
-        public void onRecycled(Task task) {
-            Logger.d(task.name + " -- onRecycled -- ");
-            Logger.d(getTaskRuntimeInfoString(task));
-        }
 
         public static String getTaskRuntimeInfoString(Task task) {
             TaskRuntimeInfo taskRuntimeInfo = TaskInfoCollections.getTaskRuntimeInfo(task);
@@ -242,8 +221,6 @@ public abstract class Task implements Runnable {
             Long startTime = map.get(TaskState.START);
             Long runningTime = map.get(TaskState.RUNNING);
             Long finishedTime = map.get(TaskState.FINISHED);
-            Long blockTime = map.get(TaskState.BLOCK);
-            Long recycledTime = map.get(TaskState.RECYCLED);
             StringBuilder builder = new StringBuilder();
             builder.append("\n");
             builder.append("详情信息");
@@ -260,11 +237,9 @@ public abstract class Task implements Runnable {
             builder.append("\n");
             builder.append("| 运行耗时 : " + (finishedTime - runningTime) + " ms ");
             builder.append("\n");
-            builder.append("| 阻塞事件 : " + (blockTime - finishedTime) + " ms ");
+            builder.append("| 结束时刻 : " + finishedTime);
             builder.append("\n");
-            builder.append("| 结束时刻 : " + recycledTime);
-            builder.append("\n");
-            builder.append("| 整个任务耗时 : " + (recycledTime - startTime) + "ms");
+            builder.append("| 整个任务耗时 : " + (finishedTime - startTime) + "ms");
             builder.append("\n");
             builder.append("====================================================");
             builder.append("\n");

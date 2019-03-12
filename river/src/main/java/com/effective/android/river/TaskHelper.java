@@ -1,9 +1,9 @@
 package com.effective.android.river;
 
 import android.support.annotation.NonNull;
-import android.text.TextUtils;
 
-import java.util.ArrayList;
+import com.effective.android.river.anno.TaskState;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,31 +12,6 @@ public class TaskHelper {
 
     static final Map<String, List<Task>> w = new HashMap<>();
 
-    public static void addWaitTask(Task task, String name) {
-        if (!TextUtils.isEmpty(name)) {
-            List<Task> tasks = w.get(name);
-            if (tasks == null) {
-                tasks = new ArrayList<>();
-                w.put(name, tasks);
-            }
-            if (!tasks.contains(task)) {
-                task.waitTasks = true;
-                tasks.add(task);
-            }
-        }
-    }
-
-    public static void releaseWaitTask(String name) {
-        if (!TextUtils.isEmpty(name)) {
-            List<Task> tasks = w.get(name);
-            if (tasks != null && !tasks.isEmpty()) {
-                for (Task task : tasks) {
-                    task.waitTasks = false;
-                }
-                tasks.clear();
-            }
-        }
-    }
 
     public static void toStart(@NonNull Task task) {
         task.state = TaskState.START;
@@ -47,14 +22,6 @@ public class TaskHelper {
         }
     }
 
-    public static void toBlock(@NonNull Task task) {
-        task.state = TaskState.BLOCK;
-        TaskInfoCollections.setStateTime(task);
-        List<ITaskListener> taskListeners = task.getTaskListeners();
-        for (ITaskListener listener : taskListeners) {
-            listener.onBlock(task);
-        }
-    }
 
     public static void toRunning(@NonNull Task task, String threadName) {
         task.state = TaskState.RUNNING;
@@ -72,16 +39,6 @@ public class TaskHelper {
         List<ITaskListener> taskListeners = task.getTaskListeners();
         for (ITaskListener listener : taskListeners) {
             listener.onFinish(task);
-        }
-        releaseWaitTask(task.name);
-    }
-
-    public static void toRecycle(@NonNull Task task) {
-        task.state = TaskState.RECYCLED;
-        TaskInfoCollections.setStateTime(task);
-        List<ITaskListener> taskListeners = task.getTaskListeners();
-        for (ITaskListener listener : taskListeners) {
-            listener.onRecycled(task);
         }
     }
 

@@ -2,8 +2,8 @@ package com.effective.android.river;
 
 import android.util.SparseArray;
 
-import java.util.HashMap;
-import java.util.Map;
+import com.effective.android.river.anno.TaskState;
+
 import java.util.Set;
 
 public class TaskRuntimeInfo {
@@ -25,7 +25,6 @@ public class TaskRuntimeInfo {
         stateTime.put(TaskState.START, -1L);
         stateTime.put(TaskState.RUNNING, -1L);
         stateTime.put(TaskState.FINISHED, -1L);
-        stateTime.put(TaskState.BLOCK, -1L);
         isProject = false;
     }
 

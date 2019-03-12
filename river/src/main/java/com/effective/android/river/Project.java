@@ -4,8 +4,8 @@ import android.support.annotation.NonNull;
 
 public class Project extends Task {
 
-    Task mFinishTask;
-    Task mStartTask;
+    private Task endTask;
+    private Task startTask;
 
     public Project(String name) {
         super(name);
@@ -15,34 +15,51 @@ public class Project extends Task {
         super(name, async);
     }
 
+    @NonNull
+    protected Task getStartTask() {
+        return startTask;
+    }
+
+    @NonNull
+    protected Task getEndTask() {
+        return endTask;
+    }
+
     @Override
-    public void behind(Task task) {
-        mFinishTask.behind(task);
+    protected void behind(Task task) {
+        endTask.behind(task);
     }
 
     @Override
     public void dependOn(Task task) {
-        mStartTask.dependOn(task);
+        startTask.dependOn(task);
     }
 
     @Override
-    public void removeBehind(Task task) {
-        mFinishTask.removeBehind(task);
+    protected void removeBehind(Task task) {
+        endTask.removeBehind(task);
     }
 
     @Override
-    public void removeDependence(Task task) {
-        mStartTask.removeDependence(task);
+    protected void removeDependence(Task task) {
+        startTask.removeDependence(task);
     }
 
     @Override
-    public synchronized void start() {
-        mStartTask.start();
+    protected synchronized void start() {
+        startTask.start();
     }
 
     @Override
     public void run(String name) {
         //不需要处理
+    }
+
+    @Override
+    void recycle() {
+        super.recycle();
+        endTask = null;
+        startTask = null;
     }
 
     public static class Builder {
@@ -60,8 +77,8 @@ public class Project extends Task {
             this.mProject = new Project(projectName);
             this.mStartTask = new CriticalTask(projectName + "_start");
             this.mFinishTask = new CriticalTask(projectName + "_end");
-            this.mProject.mStartTask = mStartTask;
-            this.mProject.mFinishTask = mFinishTask;
+            this.mProject.startTask = mStartTask;
+            this.mProject.endTask = mFinishTask;
             this.mFactory = taskFactory;
             if (mFactory == null) {
                 throw new IllegalArgumentException("taskFactory cant's be null");

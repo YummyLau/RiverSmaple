@@ -8,8 +8,4 @@ public interface ITaskListener {
     void onRunning(Task task);
 
     void onFinish(Task task);
-
-    void onBlock(Task task);
-
-    void onRecycled(Task task);
 }
