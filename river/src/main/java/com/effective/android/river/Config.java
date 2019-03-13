@@ -1,62 +1,104 @@
 package com.effective.android.river;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.TextUtils;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class Config {
 
     private static boolean sDebug = true;
 
-    private static int sCoreThreadNum = Runtime.getRuntime().availableProcessors();
-    private static ThreadFactory sThreadFactory;
-    private static ExecutorService sExecutor;
-
-
-    /*package*/ public static boolean isDebug() {
+    public static boolean isDebug() {
         return sDebug;
     }
 
-    /*package*/ static ThreadFactory getThreadFactory() {
-        if (sThreadFactory == null) {
-            sThreadFactory = getDefaultThreadFactory();
-        }
+    private static final RiverThreadPool sPool = new RiverThreadPool();
 
-        return sThreadFactory;
+    public static RiverThreadPool getThreadPool() {
+        return sPool;
     }
 
+    private static volatile Set<String> sWaitForApplication = new HashSet<>();
 
+    private static volatile List<Task> sRunBlockApplication = new ArrayList<>();
 
-    /*package*/ static ExecutorService getExecutor() {
-        if (sExecutor == null) {
-            sExecutor = getDefaultExecutor();
-        }
+    private static Handler sHandler = new Handler(Looper.getMainLooper());
 
-        return sExecutor;
+    public static Handler getHandler() {
+        return sHandler;
     }
 
-    private static ThreadFactory getDefaultThreadFactory() {
-        ThreadFactory defaultFactory = new ThreadFactory() {
-            private final AtomicInteger mCount = new AtomicInteger(1);
+    /**
+     * 按照 priority 值来排序
+     * 值越高，越优先
+     */
+    private final static Comparator<Task> sTaskComparator = new Comparator<Task>() {
+        @Override
+        public int compare(Task lhs, Task rhs) {
+            return rhs.getPriority() - lhs.getPriority();
+        }
+    };
 
-            public Thread newThread(Runnable r) {
-                return new Thread(r, "River Thread #" + mCount.getAndIncrement());
+    public static Comparator<Task> getTaskComparator() {
+        return sTaskComparator;
+    }
+
+    public static void addWaitTask(String id) {
+        if (!TextUtils.isEmpty(id)) {
+            sWaitForApplication.add(id);
+        }
+    }
+
+    public static void addWaitTasks(String... ids) {
+        if (ids != null && ids.length > 0) {
+            for (String id : ids) {
+                sWaitForApplication.add(id);
             }
-        };
-
-        return defaultFactory;
+        }
     }
 
-    private static ExecutorService getDefaultExecutor() {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(sCoreThreadNum, sCoreThreadNum,
-                60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<Runnable>(),
-                getThreadFactory());
-        executor.allowCoreThreadTimeOut(true);
+    public static void removeWaitTask(String id) {
+        if (!TextUtils.isEmpty(id)) {
+            sWaitForApplication.remove(id);
+        }
+    }
 
-        return executor;
+    public static boolean hasWaitTasks() {
+        return !sWaitForApplication.isEmpty();
+    }
+
+    public static void addRunTasks(Task task) {
+        if (task != null && !sRunBlockApplication.contains(task)) {
+            sRunBlockApplication.add(task);
+        }
+    }
+
+    public static void tryRunBlockRunnable() {
+        if (!sRunBlockApplication.isEmpty()) {
+            if (sRunBlockApplication.size() > 1) {
+                Collections.sort(sRunBlockApplication, Config.getTaskComparator());
+            }
+            Runnable runnable = sRunBlockApplication.remove(0);
+            if (hasWaitTasks()) {
+                runnable.run();
+            } else {
+                sHandler.post(runnable);
+                for (Runnable blockItem : sRunBlockApplication) {
+                    sHandler.post(blockItem);
+                }
+                sRunBlockApplication.clear();
+            }
+        }
+    }
+
+    public static boolean hasRunTasks() {
+        return !sRunBlockApplication.isEmpty();
     }
 }

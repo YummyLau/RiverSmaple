@@ -11,16 +11,23 @@ public class TaskInfoCollections {
 
     private static final Map<String, TaskRuntimeInfo> sInfo = new HashMap<>();
 
+    public static boolean hasTaskRuntimeInfo(Task task) {
+        if (task == null) {
+            return false;
+        }
+        return sInfo.get(task.getId()) != null;
+    }
+
     public static TaskRuntimeInfo getTaskRuntimeInfo(Task task) {
         if (task == null) {
             return null;
         }
-        TaskRuntimeInfo taskRuntimeInfo = sInfo.get(task.name);
+        TaskRuntimeInfo taskRuntimeInfo = sInfo.get(task.getId());
         if (taskRuntimeInfo == null) {
             taskRuntimeInfo = TaskRuntimeInfo.create();
             taskRuntimeInfo.dependences = task.getDependTaskName();
             taskRuntimeInfo.isProject = task instanceof Project;
-            sInfo.put(task.name, taskRuntimeInfo);
+            sInfo.put(task.getId(), taskRuntimeInfo);
         }
         return taskRuntimeInfo;
     }
@@ -32,11 +39,11 @@ public class TaskInfoCollections {
         }
     }
 
-    public static void setStateTime(Task task) {
+    public static void setStateInfo(Task task) {
         TaskRuntimeInfo taskRuntimeInfo = getTaskRuntimeInfo(task);
         if (taskRuntimeInfo != null) {
-            taskRuntimeInfo.state = task.state;
-            taskRuntimeInfo.stateTime.put(task.state, System.currentTimeMillis());
+            taskRuntimeInfo.state = task.getState();
+            taskRuntimeInfo.stateTime.put(task.getState(), System.currentTimeMillis());
         }
     }
 }

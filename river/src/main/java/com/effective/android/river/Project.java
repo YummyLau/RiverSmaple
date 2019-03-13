@@ -50,6 +50,7 @@ public class Project extends Task {
         startTask.start();
     }
 
+
     @Override
     public void run(String name) {
         //不需要处理
@@ -70,13 +71,16 @@ public class Project extends Task {
         private boolean mCurrentTaskShouldDependOnStartTask;
         private Project mProject;
         private TaskFactory mFactory;
+        private int mPriority;              //默认project优先级为project内所有task的优先级，如果没有设置则取 max(project内所有task的)
+
 
         public Builder(@NonNull String projectName, @NonNull TaskFactory taskFactory) {
             this.mCurrentAddTask = null;
             this.mCurrentTaskShouldDependOnStartTask = false;
             this.mProject = new Project(projectName);
-            this.mStartTask = new CriticalTask(projectName + "_start");
-            this.mFinishTask = new CriticalTask(projectName + "_end");
+            long criticalTime = System.currentTimeMillis();
+            this.mStartTask = new CriticalTask(projectName + "_start(" + criticalTime + ")");
+            this.mFinishTask = new CriticalTask(projectName + "_end(" + criticalTime + ")");
             this.mProject.startTask = mStartTask;
             this.mProject.endTask = mFinishTask;
             this.mFactory = taskFactory;
@@ -93,10 +97,17 @@ public class Project extends Task {
             } else {
                 mStartTask.behind(mFinishTask);
             }
+            mStartTask.setPriority(mPriority);
+            mFinishTask.setPriority(mPriority);
             return mProject;
         }
 
+
         public Builder add(String taskName) {
+            Task task = mFactory.getTask(taskName);
+            if (task.getPriority() > mPriority) {
+                mPriority = task.getPriority();
+            }
             return add(mFactory.getTask(taskName));
         }
 

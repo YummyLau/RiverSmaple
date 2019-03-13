@@ -1,11 +1,13 @@
 package com.effective.android.river;
 
-import android.os.Handler;
-import android.os.Looper;
+import android.os.Build;
+import android.os.Trace;
 import android.support.annotation.NonNull;
-import android.util.SparseArray;
+import android.text.TextUtils;
 
+import com.effective.android.river.interfaces.ITaskListener;
 import com.effective.android.river.anno.TaskState;
+import com.effective.android.river.debug.LogTaskListener;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,42 +15,63 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 
 /**
  * created by yummylau on 2019/03/11
  */
-public abstract class Task implements Runnable {
+public abstract class Task implements Runnable, Comparable<Task> {
 
     @TaskState
-    protected int state = TaskState.IDLE;
-    protected String name;
-    protected boolean async;
+    private int mState = TaskState.IDLE;           //状态
+    private String mId;                            //mId,唯一存在
+    private boolean isAsyncTask;                   //是否是异步存在
+    private int mPriority;                         //优先级，数值越低，优先级越低
 
+    public static final int DEFAULT_PRIORITY = 0;
     private List<Task> behindTasks = new ArrayList<>();                                //被依赖者
     private Set<Task> dependTasks = new HashSet<>();                                   //依赖者
     private Set<String> dependTaskName = new HashSet<>();                              //用于log统计
+    private List<ITaskListener> taskListeners = new ArrayList<>();                     //监听器
 
-    protected static final int DEFAULT_EXECUTE_PRIORITY = 0;
-    private int mExecutePriority = DEFAULT_EXECUTE_PRIORITY;
-    private List<ITaskListener> taskListeners = new ArrayList<>();
 
-    private static Handler sHandler = new Handler(Looper.getMainLooper());
-
-    protected int getExecutePriority() {
-        return mExecutePriority;
+    public Task(String id) {
+        this(id, false);
     }
 
-    private static ExecutorService sExecutorService = Config.getExecutor();
-
-    public Task(String name) {
-        this(name, false);
+    public Task(String id, boolean async) {
+        this.mId = id;
+        this.isAsyncTask = async;
+        this.mPriority = DEFAULT_PRIORITY;
+        if (TextUtils.isEmpty(id)) {
+            throw new IllegalArgumentException("task's mId can't be empty");
+        }
+        if (Config.isDebug()) {
+            addTaskListener(new LogTaskListener());
+        }
     }
 
-    public Task(String name, boolean async) {
-        this.name = name;
-        this.async = async;
-        addTaskListener(new InnerTaskListener());
+    public String getId() {
+        return mId;
+    }
+
+    public void setPriority(int priority) {
+        this.mPriority = priority;
+    }
+
+    public int getPriority() {
+        return mPriority;
+    }
+
+    public boolean isAsyncTask() {
+        return isAsyncTask;
+    }
+
+    public int getState() {
+        return mState;
+    }
+
+    public void setState(@TaskState int state) {
+        this.mState = state;
     }
 
     public void addTaskListener(ITaskListener taskListener) {
@@ -57,37 +80,30 @@ public abstract class Task implements Runnable {
         }
     }
 
-
     @NonNull
     public List<ITaskListener> getTaskListeners() {
         return taskListeners;
     }
 
-
     protected synchronized void start() {
-        if (!TaskHelper.isTaskIdle(this)) {
-            throw new RuntimeException("You try to run task " + name + " twice, is there a circular dependency?");
-        }
+        TaskHelper.assertTaskWhenStart(this);
         TaskHelper.toStart(this);
-        if (async) {
-            sExecutorService.execute(this);
-        } else {
-            if(RiverManager.sInstance.waitTasks.isEmpty()){
-                sHandler.post(this);
-            }else{
-                RiverManager.sInstance.toRunTask.add(this);
-            }
-        }
+        TaskHelper.smartRun(this);
     }
 
     @Override
     public void run() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            Trace.beginSection(mId);
+        }
         TaskHelper.toRunning(this, Thread.currentThread().getName());
-        run(name);
+        run(mId);
         TaskHelper.toFinish(this);
-        RiverManager.sInstance.waitTasks.remove(this);
-        notifyNextTask();
+        notifyBehindTasks();
         recycle();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            Trace.endSection();
+        }
     }
 
     protected abstract void run(String name);
@@ -95,7 +111,6 @@ public abstract class Task implements Runnable {
     public Set<String> getDependTaskName() {
         return dependTaskName;
     }
-
 
     /**
      * 后置触发, 和 {@link Task#dependOn(Task)} 方向相反，都可以设置依赖关系
@@ -133,7 +148,7 @@ public abstract class Task implements Runnable {
                 task = ((Project) task).getEndTask();
             }
             dependTasks.add(task);
-            dependTaskName.add(task.name);
+            dependTaskName.add(task.mId);
             //防止外部所有直接调用dependOn无法构建完整图
             if (!task.behindTasks.contains(this)) {
                 task.behindTasks.add(this);
@@ -147,38 +162,55 @@ public abstract class Task implements Runnable {
                 task = ((Project) task).getEndTask();
             }
             dependTasks.remove(task);
-            dependTaskName.add(task.name);
+            dependTaskName.add(task.mId);
             if (task.behindTasks.contains(this)) {
                 task.behindTasks.remove(this);
             }
         }
     }
 
-    void notifyNextTask() {
+    @Override
+    public int compareTo(@NonNull Task o) {
+        if (getPriority() < o.getPriority()) {
+            return 1;
+        }
+        if (getPriority() > o.getPriority()) {
+            return -1;
+        }
+        return 0;
+    }
+
+
+    /**
+     * 通知后置者自己已经完成了
+     */
+    void notifyBehindTasks() {
         if (!behindTasks.isEmpty()) {
 
             if (behindTasks.size() > 1) {
-                Collections.sort(behindTasks, new Comparator<Task>() {
-                    @Override
-                    public int compare(Task o1, Task o2) {
-                        return o1.getExecutePriority() - o2.getExecutePriority();
-                    }
-                });
+                Collections.sort(behindTasks, Config.getTaskComparator());
             }
 
             //遍历记下来的任务，通知它们说存在的前置已经完成
             for (Task task : behindTasks) {
-                task.notifyBeforeTaskFinish(this);
+                task.dependTaskFinish(this);
             }
         }
     }
 
-    void notifyBeforeTaskFinish(Task beforeTask) {
+    /**
+     * 依赖的任务已经完成
+     * 比如 B -> A (B 依赖 A), A 完成之后调用该方法通知 B "A依赖已经完成了"
+     * 当且仅当 B 的所有依赖都已经完成了, B 开始执行
+     *
+     * @param dependTask
+     */
+    void dependTaskFinish(Task dependTask) {
 
         if (dependTasks.isEmpty()) {
             return;
         }
-        dependTasks.remove(beforeTask);
+        dependTasks.remove(dependTask);
 
         //所有前置任务都已经完成了
         if (dependTasks.isEmpty()) {
@@ -189,71 +221,8 @@ public abstract class Task implements Runnable {
     void recycle() {
         dependTasks.clear();
         behindTasks.clear();
+        dependTaskName.clear();
         taskListeners.clear();
     }
 
-
-    public static class InnerTaskListener implements ITaskListener {
-
-        @Override
-        public void onStart(Task task) {
-            Logger.d(task.name + " -- onStart -- ");
-        }
-
-        @Override
-        public void onRunning(Task task) {
-            Logger.d(task.name + " -- onRunning -- ");
-        }
-
-        @Override
-        public void onFinish(Task task) {
-            Logger.d(task.name + " -- onFinish -- ");
-            Logger.d("详情信息" + getTaskRuntimeInfoString(task));
-        }
-
-
-        public static String getTaskRuntimeInfoString(Task task) {
-            TaskRuntimeInfo taskRuntimeInfo = TaskInfoCollections.getTaskRuntimeInfo(task);
-            if (taskRuntimeInfo == null) {
-                return "";
-            }
-            SparseArray<Long> map = taskRuntimeInfo.stateTime;
-            Long startTime = map.get(TaskState.START);
-            Long runningTime = map.get(TaskState.RUNNING);
-            Long finishedTime = map.get(TaskState.FINISHED);
-            StringBuilder builder = new StringBuilder();
-            builder.append("\n");
-            builder.append("详情信息");
-            builder.append("\n");
-            builder.append("=======================" + (taskRuntimeInfo.isProject ? "project" : "task") + "( " + task.name + " )=============================");
-            builder.append("\n");
-            builder.append("| 任务依赖 : " + getDependenceInfo(taskRuntimeInfo));
-            builder.append("\n");
-            builder.append("| 线程信息 : " + taskRuntimeInfo.threadName);
-            builder.append("\n");
-            builder.append("| 开始时刻 : " + startTime);
-            builder.append("\n");
-            builder.append("| 等待运行 : " + (runningTime - startTime) + " ms ");
-            builder.append("\n");
-            builder.append("| 运行耗时 : " + (finishedTime - runningTime) + " ms ");
-            builder.append("\n");
-            builder.append("| 结束时刻 : " + finishedTime);
-            builder.append("\n");
-            builder.append("| 整个任务耗时 : " + (finishedTime - startTime) + "ms");
-            builder.append("\n");
-            builder.append("====================================================");
-            builder.append("\n");
-            return builder.toString();
-        }
-
-        private static String getDependenceInfo(@NonNull TaskRuntimeInfo taskRuntimeInfo) {
-            StringBuilder stringBuilder = new StringBuilder();
-            if (taskRuntimeInfo.dependences != null && !taskRuntimeInfo.dependences.isEmpty()) {
-                for (String s : taskRuntimeInfo.dependences) {
-                    stringBuilder.append(s + " ");
-                }
-            }
-            return stringBuilder.toString();
-        }
-    }
 }

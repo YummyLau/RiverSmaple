@@ -15,6 +15,8 @@ public class TaskRuntimeInfo {
     @TaskState
     public int state = TaskState.IDLE;
     public boolean isProject;
+    public long taskResume = 0;             //当前任务消耗时间
+    public long dependLinkResume = 0;       //节点存在依赖链中，当前链头到该节点的消耗时间
 
     private TaskRuntimeInfo() {
         taskName = "";

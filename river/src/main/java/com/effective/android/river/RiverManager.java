@@ -1,18 +1,9 @@
 package com.effective.android.river;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class RiverManager {
 
     protected volatile static RiverManager sInstance = null;
-    protected volatile Set<Task> waitTasks = new HashSet<>();
-    protected volatile List<Runnable> toRunTask = new ArrayList<>();
-
-    private RiverManager() {
-    }
 
     public static synchronized RiverManager getInstance() {
         if (sInstance == null) {
@@ -25,21 +16,27 @@ public class RiverManager {
         return sInstance;
     }
 
+    public RiverManager applicationBlockUntilTaskFinish(String taskId) {
+        Config.addWaitTask(taskId);
+        return this;
+    }
 
-    public synchronized void start(Task task, Task waitTask) {
-        waitTasks.add(waitTask);
+    public RiverManager applicationBlockUntilTaskFinish(String... taskIds) {
+        Config.addWaitTasks(taskIds);
+        return this;
+    }
+
+    public synchronized void start(Task task) {
         task.start();
-        while (!waitTasks.isEmpty()) {
+        while (Config.hasWaitTasks()) {
             try {
                 Thread.sleep(10);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            while (!toRunTask.isEmpty()) {
-                Runnable runnable = toRunTask.remove(0);
-                runnable.run();
+            while (Config.hasRunTasks()) {
+                Config.tryRunBlockRunnable();
             }
         }
     }
-
 }
